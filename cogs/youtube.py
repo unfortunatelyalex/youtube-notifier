@@ -2,6 +2,7 @@ import asyncio
 import os
 import nextcord
 import aiohttp
+import sqlite3
 import aiosqlite
 from nextcord.ext import commands, tasks
 from datetime import datetime, timedelta
@@ -185,17 +186,21 @@ class YouTubeNotifier(commands.Cog):
         seconds = int(match.group(3) or 0)
         return hours * 3600 + minutes * 60 + seconds
 
-    async def is_video_posted(self, video_id):
-        async with aiosqlite.connect('youtube_notifier.db') as conn:
-            async with conn.execute("SELECT * FROM posted_videos WHERE video_id = ?", (video_id,)) as cursor:
-                result = await cursor.fetchone()
+    def is_video_posted(self, video_id):
+        conn = sqlite3.connect('youtube_notifier.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posted_videos WHERE video_id = ?", (video_id,))
+        result = cursor.fetchone()
+        conn.close()
         return result is not None
 
-    async def add_posted_video(self, video_id, channel_id):
-        async with aiosqlite.connect('youtube_notifier.db') as conn:
-            await conn.execute("INSERT INTO posted_videos (video_id, channel_id, posted_at) VALUES (?, ?, ?)",
-                            (video_id, channel_id, datetime.now()))
-            await conn.commit()
+    def add_posted_video(self, video_id, channel_id):
+        conn = sqlite3.connect('youtube_notifier.db')
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO posted_videos (video_id, channel_id, posted_at) VALUES (?, ?, ?)",
+                       (video_id, channel_id, datetime.now()))
+        conn.commit()
+        conn.close()
 
     @tasks.loop(minutes=15)
     async def check_new_videos(self):
@@ -224,11 +229,15 @@ class YouTubeNotifier(commands.Cog):
                             await send_webhook_message(f"New video notified: {title} from {youtube_channel_id}  -  https://www.youtube.com/watch?v={video_id}")
                             self.add_posted_video(video_id, youtube_channel_id)
                             logger.info(f"New video notified: {title} from {youtube_channel_id}")
+                        else:
+                            logger.info(f"New video already in database: {title} from {youtube_channel_id}")
                     else:
                         logger.info(f"Ignored short video from {youtube_channel_id} - {title}")
                 await asyncio.sleep(2)  # Add a delay to avoid rate-limiting
             except Exception as e:
                 logger.error(f"Error checking videos for channel {youtube_channel_id}: {str(e)}")
+            
+        logger.info("Finished checking for new videos. Waiting for next check.")
     
     @check_new_videos.before_loop
     async def before_check_new_videos(self):
