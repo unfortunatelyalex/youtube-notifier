@@ -54,8 +54,21 @@ class YouTubeNotifier(commands.Cog):
             save_config(config)
             await interaction.followup.send(f"YouTube channel {channel_id} removed from the watch list.")
             logger.info(f"Removed YouTube channel {channel_id} from watch list")
+            
+            # Delete channel handle and ID from the database
+            await self.delete_channel_handle(channel_id)
+            
         else:
             await interaction.followup.send("This channel is not in the watch list.")
+            
+    async def delete_channel_handle(self, channel_id):
+        try:
+            async with aiosqlite.connect('youtube_notifier.db') as conn:
+                await conn.execute("DELETE FROM channel_handles WHERE channel_id = ?", (channel_id,))
+                await conn.commit()
+                logger.info(f"Succesfully deleted channel handle for channel {channel_id}")
+        except aiosqlite.Error as e:
+            logger.error(f"Database error: {e}")
 
     @nextcord.slash_command(name="set_notification_channel", description="Set the Discord channel for notifications")
     async def set_notification_channel(self, interaction: nextcord.Interaction, channel: nextcord.TextChannel):
@@ -221,7 +234,7 @@ class YouTubeNotifier(commands.Cog):
                 logger.info(f"Checking videos for channel {youtube_channel_id}")
                 video_id, title, published_at, duration_seconds = await self.fetch_latest_video(youtube_channel_id)
                 if video_id and published_at > datetime.now(published_at.tzinfo) - timedelta(minutes=15):
-                    if duration_seconds >= 60:
+                    if duration_seconds > 61:
                         logger.info(f"New video found from {youtube_channel_id} - {title}")
                         if not self.is_video_posted(video_id):
                             logger.info(f"New video not in database: {title} from {youtube_channel_id}")

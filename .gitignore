@@ -6,6 +6,7 @@ __pycache__/
 *.txt
 *.json
 utils/
+*.log*
 
 # C extensions
 *.so
